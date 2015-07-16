@@ -1,0 +1,278 @@
+ ANALYZING Nephila male VO2, performance, and  predicted fitness
+========================================================
+
+General housekeeping
+--------------------
+
+First load the libraries that we are using
+```{r}
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(knitr)
+library(plyr)
+library(PerformanceAnalytics)
+```
+
+Next load the functions that we'll use for summary data
+
+Using the script written here: http://www.r-bloggers.com/more-on-exploring-correlations-in-r/
+to create the correlation data for the table, but also to create a figure of correlation values
+
+See http://goo.gl/nahmV for documentation of this function
+```{r}
+cor.prob <- function (X, dfr = nrow(X) - 2) {
+  R <- cor(X, use="pairwise.complete.obs")
+  above <- row(R) < col(R)
+  r2 <- R[above]^2
+  Fstat <- r2 * dfr/(1 - r2)
+  R[above] <- 1 - pf(Fstat, 1, dfr)
+  R[row(R) == col(R)] <- NA
+  R
+}
+```
+
+Use this function to dump the cor.prob output to a 4 column matrix with row/column indices, correlation, and p-value. See StackOverflow question: http://goo.gl/fCUcQ
+
+```{r}
+flattenSquareMatrix <- function(m) {
+  if( (class(m) != "matrix") | (nrow(m) != ncol(m))) stop("Must be a square matrix.") 
+  if(!identical(rownames(m), colnames(m))) stop("Row and column names must be equal.")
+  ut <- upper.tri(m)
+  data.frame(i = rownames(m)[row(m)[ut]],
+             j = rownames(m)[col(m)[ut]],
+             cor=t(m)[ut],
+             p=m[ut])
+}
+```
+
+Use this one for summary statistics
+
+```{r}
+my.summary <- function(x, na.rm=TRUE){
+  result <- c(Mean=mean(x, na.rm=na.rm),
+              SD=sd(x, na.rm=na.rm),
+              Median=median(x, na.rm=na.rm),
+              Min=min(x, na.rm=na.rm),
+              Max=max(x, na.rm=na.rm), 
+              N=length(x))
+}
+```
+
+Load the data (Spider VO2 Data.csv).
+Note the as.is thing which leaves all the character vectors as strings and does not make them into factors.
+
+```{r}
+data = read.table(file.choose(),  na.strings =".", header=T, sep=",")
+```
+
+Delete MV37, SV12 & SV14 as they were missing legs after the metabolic analysis and we don't have measurements for MV37 and don't have physiological measurements as we stopped them because they lost enough legs (SV12, SV14)
+
+```{r}
+data<-data[-which(is.na(data$Ceph)),]
+data<-data[-which(is.na(data$Rest_slope)),]
+```
+
+Delete Rows that are missing values in 'Trial' to subset individuals that were used in the mate choice trials
+
+```{r}
+data2<-data[-which(is.na(data$trial)),]
+```
+
+First scale all the independent variables to create z-scores
+
+```{r}
+data2$zleg <- scale(data2$leg, center = TRUE, scale=TRUE)
+data2$zceph <- scale(data2$Ceph, center = TRUE, scale=TRUE)
+data2$zweight <- scale(data2$Weight, center = TRUE, scale=TRUE)
+data2$zvolspeedmax <- scale(data2$Vol_speed_max, center = TRUE, scale=TRUE)
+data2$zforcedspeedmax <- scale(data2$Forced_speed_max, center = TRUE, scale=TRUE)
+data2$zresting <- scale(data2$Resting, center = TRUE, scale=TRUE)
+data2$zactive <- scale(data2$Active, center = TRUE, scale=TRUE)
+data2$zscope <- scale(data2$Scope, center = TRUE, scale=TRUE)
+data2$zvolspeedmean <- scale(data2$Vol_speed_mean, center = TRUE, scale=TRUE)
+data2$zforcedspeedmean <- scale(data2$Forced_speed_mean, center = TRUE, scale=TRUE)
+```
+
+
+Exploring the data'
+-----------------
+
+Check to see if there is a difference in the morphological or physiological variables of individuals that did or did not survive until the next day.
+
+```{r}
+DeathCeph <- aov(Ceph ~ Died, data=data)
+summary(DeathCeph)
+
+DeathLeg <- aov(leg ~ Died, data=data)
+summary(DeathLeg)
+
+DeathWeight <- aov(Weight ~ Died, data=data)
+summary(DeathWeight)
+
+ddply(data,~Died,summarise,mean=mean(Weight),sd=sd(Weight))
+
+DeathScope <- aov(Scope ~ Died + Weight, data=data)
+summary(DeathScope)
+```
+
+Check to see if there is a difference in average traits of individuals caught in the two different collection periods
+
+```{r}
+CollCeph <- aov(Ceph ~ Collection, data=data2)
+summary(CollCeph)
+
+CollLeg <- aov(leg ~ Collection, data=data2)
+summary(CollLeg)
+
+CollWeight <- aov(Weight ~ Collection, data=data2)
+summary(CollWeight)
+
+CollScope <- aov(Scope ~ Collection + Weight, data=data2)
+summary(CollScope)
+
+CollVol <- aov(zvolspeedmean ~ Collection, data=data2)
+summary(CollVol)
+
+CollMax <- aov(zforcedspeedmax ~ Collection, data=data2)
+summary(CollMax)
+
+```
+
+get the columns that you want from the dataset
+then create a correlation matrix
+then get the p-values using the above function
+"flatten"" theat table using the above function
+
+```{r}
+corrdata2 <- data2[, c(26,28,33,34,30)]
+cor(corrdata2)
+cor.prob(corrdata2)
+flattenSquareMatrix(cor.prob(corrdata2))
+```
+
+Finally, plot the data for Figure 1
+```{r}
+options(warn=-1)
+chart.Correlation(corrdata2)
+options(warn=0)
+```
+
+Using a MANOVA to examine whether any of the performance variables are affected by morphological (size, weight) and physiological (scope) traits.
+
+```{r}
+performance_running1 <- manova(cbind(zvolspeedmean, zforcedspeedmax) ~ zscope + zleg + zweight, data=data2)
+summary(performance_running1, test="Pillai")
+```
+
+No significance of anything.
+Below are univariate results just to see if there is any other effect
+
+```{r}
+summary.aov(performance_running1)
+```
+
+It seems that none of the factors predict any aspect of performance
+
+Now check to see if any of the morphological, physiological, or performance variables affect whether a male found a female or the estimated fitness
+
+But will run a GLM with trial as a random effect as males shared a trial and another males success may have been dependent upon another male
+
+```{r}
+Found <- glmer(Found_female ~ zvolspeedmean + zforcedspeedmax + zscope + zleg + zweight + (1|trial), data = data2, family=binomial, control = glmerControl(optimizer = "bobyqa"))
+
+summary(Found)
+```
+
+Only max voluntary speed is significant. This does make sense that voluntary speed predicts likelihood of finding a mate.
+
+Now let's check if the amount of time it took to find a female is predicted by anything
+```{r}
+Time <- lmer(Time_find ~ zvolspeedmean + zforcedspeedmax + zscope + zleg + zweight + (1|trial), data = data2)
+
+summary(Time)
+```
+
+Now check to see if estimated paternity (based on the distance to the female and the relative number of rivales) is determined by any of the above variables
+
+```{r}
+Fitness <- lmer(Est_paternity ~ zvolspeedmean + zforcedspeedmax + zscope + zleg + zweight + (1|trial), data = data2)
+
+summary(Fitness)
+```
+
+voluntary running speed is nearly significant.
+
+On average, what was the proportion of their max speed were individuals going? and did that differ between individuals that did and did not find a female?
+
+```{r}
+data2$PropMax <- (data2$Vol_speed_mean/data2$Forced_speed_max)
+
+mean(data2$PropMax)
+sd(data2$PropMax)/sqrt(length(data2$PropMax))
+
+PropMaxDiff <- lm(PropMax~Found_female, data=data2)
+summary(PropMaxDiff)
+
+PropMaxDiff2 <- lm(PropMax~Est_paternity, data=data2)
+summary(PropMaxDiff2)
+
+
+meanProp <- ddply(data2, .(Found_female), summarize, mean=mean(PropMax), se=sd(PropMax)/sqrt(length(PropMax)))
+meanProp
+```
+
+Is the proportion of their max performance determined by their scope?
+
+```{r}
+PropMaxPerf <- lm(PropMax ~ zscope + zweight, data=data2)
+summary(PropMaxPerf)
+```
+
+Nope
+
+plotting some of the factors here.
+
+First voluntary running speed and searching success
+First recode the y/n into 1/0
+This makes Figure 2
+
+```{r}
+data2$Found2 <- revalue(data2$Found_female, c("Y"="1", "N"="0"))
+
+ggplot(data2, aes(x=Found_female, y=Vol_speed_max)) + geom_boxplot() + guides(fill=FALSE) + 
+  xlab("Found a female") +
+  ylab("Mean voluntary running speed (mm "~s^-1*")") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=20,face="bold"),
+        axis.title.y=element_text(vjust=0.50),
+        axis.title.x=element_text(vjust=0.25),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank()) 
+```
+
+Let's take a look at the relationship between voluntary and forced performance and plot it
+This makes Figure 3.
+
+```{r}
+MaxPerf <- lm(Vol_speed_mean ~ Forced_speed_max, data=data2)
+summary(MaxPerf)
+
+ggplot(data2, aes(x = Forced_speed_max, y = Vol_speed_mean)) + geom_point(shape=1, size=4) +
+  theme_bw() + geom_smooth(method=lm, se=TRUE, fullrange=T) + 
+  xlab("Maximum forced running speed (mm "~s^-1*")") +
+  ylab("Voluntary mean running speed (mm "~s^-1*")") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=20,face="bold"),
+        axis.title.y=element_text(vjust=0.50),
+        axis.title.x=element_text(vjust=0.25),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+```
+
