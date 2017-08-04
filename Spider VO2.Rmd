@@ -1,5 +1,5 @@
- ANALYZING Nephila male VO2, performance, and  predicted fitness
-========================================================
+ANALYZING Nephila male VO2, performance, and  predicted fitness
+===============================================================
 
 General housekeeping
 --------------------
@@ -11,7 +11,9 @@ library(lmerTest)
 library(ggplot2)
 library(knitr)
 library(plyr)
+library(rptR)
 library(PerformanceAnalytics)
+library(MuMIn)
 ```
 
 Next load the functions that we'll use for summary data
@@ -59,8 +61,59 @@ my.summary <- function(x, na.rm=TRUE){
 }
 ```
 
-Load the data (Spider VO2 Data.csv).
-Note the as.is thing which leaves all the character vectors as strings and does not make them into factors.
+
+This is for creating the multiplot
+ Multiple plot function
+
+ ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+ - cols:   Number of columns in layout
+ - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+
+ If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+ then plot 1 will go in the upper left, 2 will go in the upper right, and
+ 3 will go all the way across the bottom.
+
+
+```{r}
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+Load the data for the performance analysis (Spider VO2 Data.csv).
 
 ```{r}
 data = read.table(file.choose(),  na.strings =".", header=T, sep=",")
@@ -94,9 +147,34 @@ data2$zvolspeedmean <- scale(data2$Vol_speed_mean, center = TRUE, scale=TRUE)
 data2$zforcedspeedmean <- scale(data2$Forced_speed_mean, center = TRUE, scale=TRUE)
 ```
 
+Load the data for the repeatability analysis (Spider_Repeatability.csv).
 
-Exploring the data'
------------------
+```{r}
+perf = read.table(file.choose(),  na.strings =".", header=T, sep=",")
+```
+
+
+First scale all the independent variables to create z-scores
+
+```{r}
+perf$zleg <- scale(perf$leg, center = TRUE, scale=TRUE)
+perf$zceph <- scale(perf$Ceph, center = TRUE, scale=TRUE)
+perf$zweight <- scale(perf$Weight, center = TRUE, scale=TRUE)
+perf$zvolspeedmean <- scale(perf$Vol_speed_mean, center = TRUE, scale=TRUE)
+perf$zvolspeedmax <- scale(perf$Vol_speed_max, center = TRUE, scale=TRUE)
+perf$zforcedspeedmean <- scale(perf$Forced_speed_mean, center = TRUE, scale=TRUE)
+perf$zforcedspeedmax <- scale(perf$Forced_speed_max, center = TRUE, scale=TRUE)
+```
+
+Data to check differences between replicates (all_males.csv).
+
+```{r}
+diff = read.table(file.choose(),  na.strings =".", header=T, sep=",")
+```
+
+
+Exploring the performance data
+------------------------------
 
 Check to see if there is a difference in the morphological or physiological variables of individuals that did or did not survive until the next day.
 
@@ -110,33 +188,8 @@ summary(DeathLeg)
 DeathWeight <- aov(Weight ~ Died, data=data)
 summary(DeathWeight)
 
-ddply(data,~Died,summarise,mean=mean(Weight),sd=sd(Weight))
-
 DeathScope <- aov(Scope ~ Died + Weight, data=data)
 summary(DeathScope)
-```
-
-Check to see if there is a difference in average traits of individuals caught in the two different collection periods
-
-```{r}
-CollCeph <- aov(Ceph ~ Collection, data=data2)
-summary(CollCeph)
-
-CollLeg <- aov(leg ~ Collection, data=data2)
-summary(CollLeg)
-
-CollWeight <- aov(Weight ~ Collection, data=data2)
-summary(CollWeight)
-
-CollScope <- aov(Scope ~ Collection + Weight, data=data2)
-summary(CollScope)
-
-CollVol <- aov(zvolspeedmean ~ Collection, data=data2)
-summary(CollVol)
-
-CollMax <- aov(zforcedspeedmax ~ Collection, data=data2)
-summary(CollMax)
-
 ```
 
 get the columns that you want from the dataset
@@ -145,17 +198,17 @@ then get the p-values using the above function
 "flatten"" theat table using the above function
 
 ```{r}
-corrdata2 <- data2[, c(26,28,33,34,30)]
+corrdata2 <- data2[, c(27,29,34,30,31)]
 cor(corrdata2)
 cor.prob(corrdata2)
 flattenSquareMatrix(cor.prob(corrdata2))
 ```
 
-Finally, plot the data for Figure 1
+Finally, plot the data for Figure S3
 ```{r}
-options(warn=-1)
 chart.Correlation(corrdata2)
-options(warn=0)
+pdf(file="test.pdf")
+
 ```
 
 Using a MANOVA to examine whether any of the performance variables are affected by morphological (size, weight) and physiological (scope) traits.
@@ -163,6 +216,7 @@ Using a MANOVA to examine whether any of the performance variables are affected 
 ```{r}
 performance_running1 <- manova(cbind(zvolspeedmean, zforcedspeedmax) ~ zscope + zleg + zweight, data=data2)
 summary(performance_running1, test="Pillai")
+
 ```
 
 No significance of anything.
@@ -196,7 +250,7 @@ summary(Time)
 Now check to see if estimated paternity (based on the distance to the female and the relative number of rivales) is determined by any of the above variables
 
 ```{r}
-Fitness <- lmer(Est_paternity ~ zvolspeedmean + zforcedspeedmax + zscope + zleg + zweight + (1|trial), data = data2)
+Fitness <- lmer(Order ~ zvolspeedmean + zforcedspeedmax + zscope + zleg + zweight + (1|trial), data = data2)
 
 summary(Fitness)
 ```
@@ -235,23 +289,34 @@ plotting some of the factors here.
 
 First voluntary running speed and searching success
 First recode the y/n into 1/0
-This makes Figure 2
+This makes Figure 1
 
 ```{r}
 data2$Found2 <- revalue(data2$Found_female, c("Y"="1", "N"="0"))
 
-ggplot(data2, aes(x=Found_female, y=Vol_speed_max)) + geom_boxplot() + guides(fill=FALSE) + 
+Figure1 <- ggplot(data2, aes(x=Found_female, y=Vol_speed_max)) + geom_violin() + guides(fill=FALSE) + 
   xlab("Found a female") +
-  ylab("Mean voluntary running speed (mm "~s^-1*")") +
+  ylab("Maximum voluntary speed") +
+  stat_summary(fun.y="mean", geom="point", size=3) +
   theme(axis.line = element_line(colour = "black"),
         axis.text=element_text(size=18),
         axis.title=element_text(size=20,face="bold"),
-        axis.title.y=element_text(vjust=0.50),
+        axis.title.y=element_text(vjust=0.25),
         axis.title.x=element_text(vjust=0.25),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank(),
-        panel.background = element_blank()) 
+        panel.background = element_blank())
+
+Figure1
+
+ggsave(
+  "Figure1.png",
+  Figure1,
+  width = 5.25,
+  height = 5.25,
+  dpi = 1200
+)
 ```
 
 Let's take a look at the relationship between voluntary and forced performance and plot it
@@ -261,18 +326,137 @@ This makes Figure 3.
 MaxPerf <- lm(Vol_speed_mean ~ Forced_speed_max, data=data2)
 summary(MaxPerf)
 
-ggplot(data2, aes(x = Forced_speed_max, y = Vol_speed_mean)) + geom_point(shape=1, size=4) +
+Figure3 <- ggplot(data2, aes(x = Forced_speed_max, y = Vol_speed_mean)) + geom_point(shape=1, size=4) +
   theme_bw() + geom_smooth(method=lm, se=TRUE, fullrange=T) + 
   xlab("Maximum forced running speed (mm "~s^-1*")") +
-  ylab("Voluntary mean running speed (mm "~s^-1*")") +
+  ylab("Voluntary running speed (mm "~s^-1*")") +
   theme(axis.line = element_line(colour = "black"),
         axis.text=element_text(size=18),
         axis.title=element_text(size=20,face="bold"),
-        axis.title.y=element_text(vjust=0.50),
+        axis.title.y=element_text(vjust=0.25),
         axis.title.x=element_text(vjust=0.25),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank(),
         panel.background = element_blank())
+
+Figure3
+        
+ggsave(
+  "Figure3.png",
+  Figure3,
+  width = 8.25,
+  height = 5.25,
+  dpi = 1200
+)
 ```
 
+
+Exploring the repeatability data
+--------------------------------
+
+First, use a MANOVA to examine whether any of the performance variables are affected by size and weight.
+
+```{r}
+perf_repeat_vol <- lmer(zvolspeedmean ~ zleg + zweight + (1|ID), data = perf)
+summary(perf_repeat_vol)
+
+perf_repeat_forcedmax <- lmer(zforcedspeedmax ~ zleg + zweight + (1|ID), data = perf)
+summary(perf_repeat_forcedmax)
+
+```
+
+
+Leg size and weight predicts voluntary mean running speed
+
+```{r}
+Figure2a <- ggplot(perf, aes(x = Weight, y = Vol_speed_mean)) + geom_point(shape=1, size=4) +
+  theme_bw() + geom_smooth(method=lm, se=TRUE, fullrange=T) + 
+  xlab("Mass (mg)") +
+  ylab("Voluntary running speed (mm "~s^-1*")") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18),
+        axis.title.y=element_text(vjust=0.5),
+        axis.title.x=element_text(vjust=0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+Figure2a
+
+Figure2b <- ggplot(perf, aes(x = Vol_speed_mean, y = leg)) + geom_point(shape=1, size=4) +
+  theme_bw() + geom_smooth(method=lm, se=TRUE, fullrange=T) + 
+  xlab("Size(mm)") +
+  ylab("Voluntary running speed (mm "~s^-1*")") +
+  theme(axis.line = element_line(colour = "black"),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18),
+        axis.title.y=element_text(vjust=0.5),
+        axis.title.x=element_text(vjust=0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+Figure2b
+
+multiplot(Figure2a, Figure2b, cols=2)
+
+```
+
+What is the proportion of their max speed were individuals going in this second sample of males?
+
+```{r}
+perf$PropMax <- (perf$Vol_speed_mean/perf$Forced_speed_max)
+
+mean(perf$PropMax)
+sd(perf$PropMax)/sqrt(length(perf$PropMax))
+
+MaxPerf_rpt <- lmer(Vol_speed_mean ~ Forced_speed_max + (1|ID), data=perf)
+summary(MaxPerf_rpt)
+
+r.squaredGLMM(MaxPerf_rpt)
+
+```
+
+```{r}
+volspeed_rpt <- rpt(zvolspeedmean ~ (1 | ID), grname = "ID", data = perf, datatype = "Gaussian", 
+    nboot = 1000, npermut = 0)
+
+summary(volspeed_rpt)
+print(volspeed_rpt) 
+plot(volspeed_rpt, cex.main = 1)
+
+volmax_rpt <- rpt(zvolspeedmax ~ (1 | ID), grname = "ID", data = perf, datatype = "Gaussian", 
+    nboot = 1000, npermut = 0)
+
+summary(volmax_rpt)
+print(volmax_rpt) 
+plot(volmax_rpt, cex.main = 1)
+
+forced_rpt <- rpt(zforcedspeedmean ~ (1 | ID), grname = "ID", data = perf, datatype = "Gaussian", nboot = 1000, npermut = 0)
+
+summary(forced_rpt)
+print(forced_rpt)
+plot(forced_rpt, cex.main = 1)
+
+forced_max_rpt <- rpt(zforcedspeedmax ~ (1 | ID), grname = "ID", data = perf, datatype = "Gaussian", nboot = 1000, npermut = 0)
+
+summary(forced_max_rpt)
+print(forced_rpt)
+plot(forced_max_rpt, cex.main = 1)
+
+```
+
+
+Checking for differences between males in the two experiments
+=============================================================
+
+
+```{r}
+diff1 <- aov(Experiment ~ leg + Weight, data=diff)
+summary(diff1)
+
+```
