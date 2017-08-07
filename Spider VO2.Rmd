@@ -326,7 +326,7 @@ This makes Figure 3.
 MaxPerf <- lm(Vol_speed_mean ~ Forced_speed_max, data=data2)
 summary(MaxPerf)
 
-Figure3 <- ggplot(data2, aes(x = Forced_speed_max, y = Vol_speed_mean)) + geom_point(shape=1, size=4) +
+Figure2 <- ggplot(data2, aes(x = Forced_speed_max, y = Vol_speed_mean)) + geom_point(shape=1, size=4) +
   theme_bw() + geom_smooth(method=lm, se=TRUE, fullrange=T) + 
   xlab("Maximum forced running speed (mm "~s^-1*")") +
   ylab("Voluntary running speed (mm "~s^-1*")") +
@@ -340,11 +340,11 @@ Figure3 <- ggplot(data2, aes(x = Forced_speed_max, y = Vol_speed_mean)) + geom_p
         panel.border = element_blank(),
         panel.background = element_blank())
 
-Figure3
+Figure2
         
 ggsave(
-  "Figure3.png",
-  Figure3,
+  "Figure2.png",
+  Figure2,
   width = 8.25,
   height = 5.25,
   dpi = 1200
